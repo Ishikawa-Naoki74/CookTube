@@ -1,0 +1,528 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  SafeAreaView,
+  Alert,
+  ActivityIndicator,
+  Dimensions,
+} from 'react-native';
+import { Image } from 'expo-image';
+import { router } from 'expo-router';
+import { useAuth } from '../../contexts/AuthContext';
+import { RecipeApiClient } from '../../lib/recipe-api';
+import { ApiRecipe } from '../../types/api';
+
+const { width } = Dimensions.get('window');
+const CARD_WIDTH = (width - 48) / 2; // 2 cards per row with margins
+
+interface RecipeCardProps {
+  recipe: ApiRecipe;
+  onPress: (recipe: ApiRecipe) => void;
+  onDelete: (recipe: ApiRecipe) => void;
+}
+
+function RecipeCard({ recipe, onPress, onDelete }: RecipeCardProps) {
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const isShortVideo = (url: string): boolean => {
+    return url.includes('/shorts/') || url.includes('youtube.com/shorts');
+  };
+
+  const handleDelete = () => {
+    console.log('🗑️ Delete button touched for recipe:', recipe.id);
+    Alert.alert(
+      'Delete Recipe',
+      `Are you sure you want to delete "${recipe.videoTitle}"? This action cannot be undone.`,
+      [
+        { 
+          text: 'Cancel', 
+          style: 'cancel',
+          onPress: () => console.log('Delete cancelled')
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            console.log('Delete confirmed, calling onDelete...');
+            try {
+              await onDelete(recipe);
+            } catch (error) {
+              console.error('Error in delete confirmation:', error);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.recipeCard}
+      onPress={() => onPress(recipe)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.thumbnailContainer}>
+        <Image
+          source={{ uri: recipe.videoThumbnail }}
+          style={[
+            styles.recipeThumbnail,
+            isShortVideo(recipe.youtubeUrl) && styles.shortsRecipeThumbnail
+          ]}
+          contentFit="cover"
+          placeholder={{ 
+            uri: isShortVideo(recipe.youtubeUrl)
+              ? 'https://via.placeholder.com/300x400/cccccc/666666?text=Shorts'
+              : 'https://via.placeholder.com/300x169?text=Loading...'
+          }}
+        />
+        {isShortVideo(recipe.youtubeUrl) && (
+          <View style={styles.shortsCardBadge}>
+            <Text style={styles.shortsCardBadgeText}>Shorts</Text>
+          </View>
+        )}
+        <TouchableOpacity 
+          style={styles.deleteButton}
+          onPress={handleDelete}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={styles.deleteButtonText}>×</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.cardContent}>
+        <Text style={styles.recipeTitle} numberOfLines={2}>
+          {recipe.videoTitle}
+        </Text>
+        <Text style={styles.recipeDate}>
+          {formatDate(recipe.createdAt)}
+        </Text>
+        <View style={styles.recipeStats}>
+          <Text style={styles.statText}>
+            {recipe.ingredients?.length || 0} ingredients
+          </Text>
+          <Text style={styles.statText}>
+            {recipe.steps?.length || 0} steps
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+export default function RecipeListScreen() {
+  const { user } = useAuth();
+  const [recipes, setRecipes] = useState<ApiRecipe[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+
+  const loadRecipes = useCallback(async (page = 1, search = '', isRefresh = false) => {
+    try {
+      if (page === 1 && !isRefresh) {
+        setIsLoading(true);
+      }
+
+      const response = await RecipeApiClient.getRecipes({
+        page,
+        limit: 10,
+        search: search.trim() || undefined,
+      });
+
+      if (page === 1) {
+        setRecipes(response.recipes);
+      } else {
+        setRecipes(prev => [...prev, ...response.recipes]);
+      }
+
+      setCurrentPage(page);
+      setHasMore(page < response.pagination.pages);
+    } catch (error: any) {
+      console.error('Failed to load recipes:', error);
+      Alert.alert('Error', 'Failed to load recipes. Please try again.');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+      setIsLoadingMore(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRecipes();
+  }, [loadRecipes]);
+
+  const handleSearch = useCallback((text: string) => {
+    setSearchQuery(text);
+    setCurrentPage(1);
+    setHasMore(true);
+    loadRecipes(1, text);
+  }, [loadRecipes]);
+
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setCurrentPage(1);
+    setHasMore(true);
+    loadRecipes(1, searchQuery, true);
+  }, [loadRecipes, searchQuery]);
+
+  const handleLoadMore = useCallback(() => {
+    if (!isLoadingMore && hasMore && !isLoading) {
+      setIsLoadingMore(true);
+      loadRecipes(currentPage + 1, searchQuery);
+    }
+  }, [isLoadingMore, hasMore, isLoading, currentPage, searchQuery, loadRecipes]);
+
+  const handleRecipePress = useCallback((recipe: ApiRecipe) => {
+    router.push(`/recipe/${recipe.id}` as any);
+  }, []);
+
+  const handleRecipeDelete = useCallback(async (recipe: ApiRecipe) => {
+    console.log('🗑️ handleRecipeDelete called for recipe:', recipe.id, recipe.videoTitle);
+    
+    try {
+      console.log('📡 About to call RecipeApiClient.deleteRecipe...');
+      const result = await RecipeApiClient.deleteRecipe(recipe.id);
+      console.log('✅ RecipeApiClient.deleteRecipe completed, result:', result);
+      
+      console.log('🔄 Updating local state to remove recipe from list...');
+      setRecipes(prev => {
+        const filtered = prev.filter(r => r.id !== recipe.id);
+        console.log('📝 Recipe list updated. Before:', prev.length, 'After:', filtered.length);
+        return filtered;
+      });
+      
+      console.log('✅ Showing success alert...');
+      Alert.alert('Success', 'Recipe deleted successfully!');
+    } catch (error: any) {
+      console.error('❌ Failed to delete recipe:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.status,
+        data: error.data,
+        name: error.name,
+        stack: error.stack
+      });
+      
+      const errorMessage = error.message || error.data?.error || 'Failed to delete recipe. Please try again.';
+      console.log('🚨 Showing error alert:', errorMessage);
+      Alert.alert('Error', errorMessage);
+    }
+  }, []);
+
+  const renderRecipeCard = useCallback(({ item }: { item: ApiRecipe }) => (
+    <RecipeCard 
+      recipe={item} 
+      onPress={handleRecipePress} 
+      onDelete={handleRecipeDelete}
+    />
+  ), [handleRecipePress, handleRecipeDelete]);
+
+  const renderEmptyState = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.emptyState}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.emptyStateText}>Loading recipes...</Text>
+        </View>
+      );
+    }
+
+    if (searchQuery) {
+      return (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateTitle}>No recipes found</Text>
+          <Text style={styles.emptyStateText}>
+            No recipes match your search for "{searchQuery}"
+          </Text>
+          <TouchableOpacity
+            style={styles.clearSearchButton}
+            onPress={() => handleSearch('')}
+          >
+            <Text style={styles.clearSearchText}>Clear search</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyStateTitle}>No recipes yet</Text>
+        <Text style={styles.emptyStateText}>
+          Start by generating your first recipe from a YouTube video!
+        </Text>
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={() => router.push('/(tabs)/')}
+        >
+          <Text style={styles.createButtonText}>Generate Recipe</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderFooter = () => {
+    if (!isLoadingMore) return null;
+    
+    return (
+      <View style={styles.loadingFooter}>
+        <ActivityIndicator size="small" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading more...</Text>
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>My Recipes</Text>
+        <Text style={styles.subtitle}>
+          {recipes.length} recipe{recipes.length !== 1 ? 's' : ''}
+        </Text>
+      </View>
+
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search recipes..."
+          value={searchQuery}
+          onChangeText={handleSearch}
+          clearButtonMode="while-editing"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+
+      <FlatList
+        data={recipes}
+        renderItem={renderRecipeCard}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        contentContainerStyle={styles.listContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={['#007AFF']}
+            tintColor="#007AFF"
+          />
+        }
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        ListEmptyComponent={renderEmptyState}
+        ListFooterComponent={renderFooter}
+        showsVerticalScrollIndicator={false}
+        columnWrapperStyle={styles.row}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  header: {
+    padding: 20,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+  },
+  searchContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  searchInput: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  listContainer: {
+    padding: 16,
+    paddingTop: 0,
+    flexGrow: 1,
+  },
+  row: {
+    justifyContent: 'space-between',
+  },
+  recipeCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    width: CARD_WIDTH,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  thumbnailContainer: {
+    position: 'relative',
+  },
+  recipeThumbnail: {
+    width: '100%',
+    height: CARD_WIDTH * 0.45, // Reduced size: 0.6 -> 0.45
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  deleteButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  shortsRecipeThumbnail: {
+    height: CARD_WIDTH * 0.8, // Shorts videos are vertical so increase height
+  },
+  shortsCardBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    backgroundColor: 'rgba(255, 0, 0, 0.9)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 3,
+  },
+  shortsCardBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  cardContent: {
+    padding: 12,
+  },
+  recipeTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  recipeDate: {
+    fontSize: 12,
+    color: '#888',
+    marginBottom: 8,
+  },
+  recipeStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statText: {
+    fontSize: 11,
+    color: '#666',
+    fontWeight: '500',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 48,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  createButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  createButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  clearSearchButton: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  clearSearchText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+  },
+  loadingFooter: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginTop: 8,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 8,
+  },
+});

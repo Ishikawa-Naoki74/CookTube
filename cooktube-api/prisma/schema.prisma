@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  password  String?
+  isGuest   Boolean  @default(false) @map("is_guest")
+  createdAt DateTime @default(now()) @map("created_at")
+  recipes   Recipe[]
+  processingJobs ProcessingJob[]
+  shoppingLists ShoppingList[]
+
+  @@map("users")
+}
+
+model Recipe {
+  id                String       @id @default(uuid())
+  userId            String       @map("user_id")
+  youtubeUrl        String       @map("youtube_url")
+  videoTitle        String       @map("video_title")
+  videoThumbnail    String       @map("video_thumbnail")
+  ingredients       Json
+  steps             Json
+  transcriptionText String       @map("transcription_text")
+  recognitionLabels Json         @map("recognition_labels")
+  audioS3Url        String?      @map("audio_s3_url")
+  videoS3Url        String?      @map("video_s3_url")
+  frameS3Urls       Json?        @map("frame_s3_urls")
+  metadata          Json?        // 動画分析のメタデータ（フレーム数、信頼度スコアなど）
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  processingJobs    ProcessingJob[]
+
+  // 同じユーザーが同じ動画を複数回保存することを防ぐ
+  @@unique([userId, youtubeUrl])
+  @@map("recipes")
+}
+
+model ProcessingJob {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  youtubeUrl      String   @map("youtube_url")
+  status          JobStatus
+  progressPercent Int      @default(0) @map("progress_percent")
+  errorMessage    String?  @map("error_message")
+  recipeId        String?  @map("recipe_id")
+  completedAt     DateTime? @map("completed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe          Recipe?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  frameAnalyses   FrameAnalysis[]
+
+  @@map("processing_jobs")
+}
+
+model ShoppingList {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  items     Json
+  isShared  Boolean  @default(false) @map("is_shared")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("shopping_lists")
+}
+
+model FrameAnalysis {
+  id                  String   @id @default(uuid())
+  jobId               String   @map("job_id")
+  frameNumber         Int      @map("frame_number")
+  timestampSeconds    Float    @map("timestamp_seconds")
+  s3Url               String   @map("s3_url")
+  detectedIngredients Json     @map("detected_ingredients")
+  detectedTools       Json     @map("detected_tools")
+  detectedActions     Json     @map("detected_actions")
+  confidenceScores    Json     @map("confidence_scores")
+  createdAt           DateTime @default(now()) @map("created_at")
+  job                 ProcessingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("frame_analyses")
+}
+
+enum JobStatus {
+  pending
+  extracting_frames
+  analyzing_frames
+  transcribing
+  integrating_timeline
+  generating_recipe
+  saving_recipe
+  completed
+  failed
+}

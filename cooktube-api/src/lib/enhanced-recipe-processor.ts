@@ -1,0 +1,310 @@
+import { PrismaClient, JobStatus } from '@prisma/client';
+import { YouTubeService } from './youtube';
+import { AWSTranscribeService } from './aws-transcribe';
+import { AWSRekognitionVideoService, VideoAnalysisResult } from './aws-rekognition-video';
+import { VideoProcessor, VideoFrame } from './video-processor';
+import { AWSBedrockService } from './aws-bedrock';
+
+export interface EnhancedProcessingJobUpdate {
+  jobId: string;
+  status: JobStatus;
+  progressPercent: number;
+  currentStep: string;
+  errorMessage?: string;
+}
+
+export interface EnhancedRecipeData {
+  title: string;
+  description: string;
+  ingredients: IngredientWithTimestamp[];
+  steps: CookingStepWithMedia[];
+  cookingTools: string[];
+  estimatedTime: number;
+  difficulty: 'easy' | 'medium' | 'hard';
+  videoAnalysis: VideoAnalysisResult;
+  audioTranscription: any;
+}
+
+export interface IngredientWithTimestamp {
+  name: string;
+  amount?: string;
+  unit?: string;
+  firstAppearance: number; // タイムスタンプ
+  confidence: number;
+}
+
+export interface CookingStepWithMedia {
+  stepNumber: number;
+  instruction: string;
+  startTime: number;
+  endTime: number;
+  ingredients: string[];
+  tools: string[];
+  techniques: string[];
+  keyFrame?: string; // 重要なフレームの画像パス
+}
+
+export type EnhancedProcessingProgressCallback = (update: EnhancedProcessingJobUpdate) => void;
+
+export class EnhancedRecipeProcessorService {
+  private prisma: PrismaClient;
+  private youtubeService: YouTubeService;
+  private transcribeService: AWSTranscribeService;
+  private rekognitionVideoService: AWSRekognitionVideoService;
+  private videoProcessor: VideoProcessor;
+  private bedrockService: AWSBedrockService;
+
+  constructor() {
+    this.prisma = new PrismaClient();
+    this.youtubeService = new YouTubeService();
+    this.transcribeService = new AWSTranscribeService();
+    this.rekognitionVideoService = new AWSRekognitionVideoService();
+    this.videoProcessor = new VideoProcessor();
+    this.bedrockService = new AWSBedrockService();
+  }
+
+  async startEnhancedProcessing(
+    userId: string,
+    youtubeUrl: string,
+    progressCallback?: EnhancedProcessingProgressCallback
+  ): Promise<string> {
+    // Validate YouTube URL
+    if (!YouTubeService.validateYouTubeUrl(youtubeUrl)) {
+      throw new Error('Invalid YouTube URL');
+    }
+
+    // Create processing job
+    const job = await this.prisma.processingJob.create({
+      data: {
+        userId,
+        youtubeUrl,
+        status: 'pending',
+        progressPercent: 0,
+      },
+    });
+
+    // Process asynchronously
+    this.processVideoEnhanced(job.id, userId, youtubeUrl, progressCallback).catch(error => {
+      console.error('Enhanced background processing failed:', error);
+      this.updateJobStatus(job.id, 'failed', 0, 'Processing Failed', error.message, progressCallback);
+    });
+
+    return job.id;
+  }
+
+  private async updateJobStatus(
+    jobId: string,
+    status: JobStatus,
+    progressPercent: number,
+    currentStep: string,
+    errorMessage?: string,
+    progressCallback?: EnhancedProcessingProgressCallback
+  ): Promise<void> {
+    await this.prisma.processingJob.update({
+      where: { id: jobId },
+      data: {
+        status,
+        progressPercent,
+        errorMessage,
+      },
+    });
+
+    if (progressCallback) {
+      progressCallback({
+        jobId,
+        status,
+        progressPercent,
+        currentStep,
+        errorMessage,
+      });
+    }
+  }
+
+  private async processVideoEnhanced(
+    jobId: string,
+    userId: string,
+    youtubeUrl: string,
+    progressCallback?: EnhancedProcessingProgressCallback
+  ): Promise<void> {
+    let videoId: string | undefined;
+
+    try {
+      // Step 1: 動画情報の取得
+      await this.updateJobStatus(jobId, 'pending', 5, 'Getting video information', undefined, progressCallback);
+      
+      const videoInfo = await YouTubeService.getVideoInfo(youtubeUrl);
+      videoId = YouTubeService.extractVideoId(youtubeUrl);
+      
+      if (!videoId) {
+        throw new Error('Could not extract video ID');
+      }
+
+      // Step 2: 動画のダウンロード
+      await this.updateJobStatus(jobId, 'processing', 15, 'Downloading video', undefined, progressCallback);
+      
+      const videoData = await this.videoProcessor.downloadVideo(youtubeUrl, videoId);
+      
+      // Step 3: 音声抽出と音声解析（並列処理）
+      await this.updateJobStatus(jobId, 'processing', 25, 'Extracting and analyzing audio', undefined, progressCallback);
+      
+      const audioPath = await YouTubeService.downloadAudio(youtubeUrl);
+      const transcriptionPromise = this.transcribeService.transcribeAudio(audioPath, videoId);
+
+      // Step 4: 動画をS3にアップロード
+      await this.updateJobStatus(jobId, 'processing', 35, 'Uploading video for analysis', undefined, progressCallback);
+      
+      const s3VideoKey = `videos/${videoId}/${Date.now()}.mp4`;
+      const s3VideoUri = await this.rekognitionVideoService.uploadVideo(
+        await require('fs').promises.readFile(videoData.videoPath),
+        s3VideoKey
+      );
+
+      // Step 5: AWS Rekognition Videoでの解析開始
+      await this.updateJobStatus(jobId, 'processing', 45, 'Starting video analysis', undefined, progressCallback);
+      
+      const analysisJobId = await this.rekognitionVideoService.startVideoLabelDetection(s3VideoUri);
+
+      // Step 6: フレーム抽出（キーフレーム + シーン変化）
+      await this.updateJobStatus(jobId, 'processing', 55, 'Extracting key frames', undefined, progressCallback);
+      
+      const keyFrames = await this.videoProcessor.extractKeyFrames(videoData.videoPath, videoId);
+      const sceneFrames = await this.videoProcessor.extractSceneChangeFrames(videoData.videoPath, videoId);
+      const allFrames = [...keyFrames, ...sceneFrames].sort((a, b) => a.timestamp - b.timestamp);
+
+      // Step 7: 動画解析の完了を待機
+      await this.updateJobStatus(jobId, 'processing', 65, 'Waiting for video analysis', undefined, progressCallback);
+      
+      await this.rekognitionVideoService.waitForJobCompletion(analysisJobId);
+      const videoAnalysis = await this.rekognitionVideoService.getVideoAnalysisResults(analysisJobId);
+
+      // Step 8: 音声解析の完了を待機
+      await this.updateJobStatus(jobId, 'processing', 75, 'Completing audio transcription', undefined, progressCallback);
+      
+      const transcriptionResult = await transcriptionPromise;
+
+      // Step 9: 統合データの準備
+      await this.updateJobStatus(jobId, 'processing', 85, 'Integrating analysis results', undefined, progressCallback);
+      
+      const integratedData = this.integrateAnalysisResults(
+        videoInfo,
+        videoAnalysis,
+        transcriptionResult,
+        allFrames
+      );
+
+      // Step 10: AIでレシピ生成
+      await this.updateJobStatus(jobId, 'processing', 90, 'Generating structured recipe', undefined, progressCallback);
+      
+      const structuredRecipe = await this.bedrockService.generateEnhancedRecipe(integratedData);
+
+      // Step 11: データベースに保存
+      await this.updateJobStatus(jobId, 'processing', 95, 'Saving recipe to database', undefined, progressCallback);
+      
+      const savedRecipe = await this.saveEnhancedRecipe(userId, youtubeUrl, structuredRecipe);
+
+      // Step 12: 完了
+      await this.updateJobStatus(jobId, 'completed', 100, 'Recipe generation completed', undefined, progressCallback);
+
+      // クリーンアップ
+      await this.videoProcessor.cleanup(videoId);
+      await YouTubeService.cleanupVideoFiles(videoId);
+
+    } catch (error: any) {
+      console.error('Enhanced processing error:', error);
+      
+      if (videoId) {
+        await this.videoProcessor.cleanup(videoId);
+        await YouTubeService.cleanupVideoFiles(videoId);
+      }
+
+      await this.updateJobStatus(
+        jobId,
+        'failed',
+        0,
+        'Processing failed',
+        error.message,
+        progressCallback
+      );
+      
+      throw error;
+    }
+  }
+
+  /**
+   * 音声解析と動画解析の結果を統合
+   */
+  private integrateAnalysisResults(
+    videoInfo: any,
+    videoAnalysis: VideoAnalysisResult,
+    transcriptionResult: any,
+    frames: VideoFrame[]
+  ): any {
+    // タイムラインベースでの統合
+    const timeline = [];
+
+    // 動画解析からのイベント
+    for (const event of videoAnalysis.timeline) {
+      timeline.push({
+        timestamp: event.timestamp,
+        type: event.type,
+        source: 'video',
+        description: event.description,
+        confidence: event.confidence,
+      });
+    }
+
+    // 音声解析からのイベント
+    for (const segment of transcriptionResult.segments) {
+      timeline.push({
+        timestamp: segment.startTime,
+        type: 'speech',
+        source: 'audio',
+        description: segment.text,
+        confidence: segment.confidence,
+      });
+    }
+
+    // タイムスタンプでソート
+    timeline.sort((a, b) => a.timestamp - b.timestamp);
+
+    return {
+      videoInfo,
+      videoAnalysis,
+      transcriptionResult,
+      frames,
+      integratedTimeline: timeline,
+    };
+  }
+
+  /**
+   * 拡張レシピをデータベースに保存
+   */
+  private async saveEnhancedRecipe(
+    userId: string,
+    youtubeUrl: string,
+    recipeData: EnhancedRecipeData
+  ): Promise<any> {
+    try {
+      return await this.prisma.recipe.create({
+        data: {
+          userId,
+          youtubeUrl,
+          videoTitle: recipeData.title,
+          videoThumbnail: '', // サムネイルURLを設定
+          ingredients: JSON.stringify(recipeData.ingredients),
+          steps: JSON.stringify(recipeData.steps),
+          transcriptionText: recipeData.audioTranscription?.text || '',
+          recognitionLabels: JSON.stringify(recipeData.videoAnalysis.labels),
+          // 新しいフィールド
+          cookingTools: JSON.stringify(recipeData.cookingTools),
+          estimatedTime: recipeData.estimatedTime,
+          difficulty: recipeData.difficulty,
+          videoAnalysisData: JSON.stringify(recipeData.videoAnalysis),
+        },
+      });
+    } catch (error) {
+      console.error('Error saving enhanced recipe:', error);
+      throw new Error('Failed to save recipe to database');
+    }
+  }
+}

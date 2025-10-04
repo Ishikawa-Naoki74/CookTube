@@ -31,21 +31,9 @@ yarn-error.*
 *.pem
 
 # local env files
-.env
 .env*.local
 
 # typescript
 *.tsbuildinfo
-
-# Next.js
-.next/
-out/
-
-# Prisma
-/prisma/migrations/
-
-# Temporary files
-tmp/
-temp/
 
 app-example
