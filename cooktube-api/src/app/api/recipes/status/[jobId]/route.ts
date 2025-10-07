@@ -4,7 +4,7 @@ import { RecipeProcessorService } from '@/lib/recipe-processor';
 
 const recipeProcessor = new RecipeProcessorService();
 
-async function handler(req: AuthenticatedRequest, context: { params: { jobId: string } }) {
+async function handler(req: AuthenticatedRequest, context: { params: Promise<{ jobId: string }> }) {
   try {
     const user = req.user;
     if (!user) {
@@ -14,7 +14,7 @@ async function handler(req: AuthenticatedRequest, context: { params: { jobId: st
       );
     }
 
-    const { jobId } = context.params;
+    const { jobId } = await context.params;
 
     if (!jobId) {
       return NextResponse.json(

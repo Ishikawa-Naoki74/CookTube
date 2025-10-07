@@ -5,7 +5,7 @@ import { ShoppingListItem } from '../../route';
 
 const prisma = new PrismaClient();
 
-async function handler(req: AuthenticatedRequest, { params }: { params: { recipeId: string } }) {
+async function handler(req: AuthenticatedRequest, { params }: { params: Promise<{ recipeId: string }> }) {
   try {
     const user = req.user;
     if (!user) {
@@ -22,7 +22,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: { recipe
       );
     }
 
-    const { recipeId } = params;
+    const { recipeId } = await params;
     const body = await req.json();
     const { listName } = body;
 

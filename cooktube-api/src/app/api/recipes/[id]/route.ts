@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-async function handler(req: AuthenticatedRequest, { params }: { params: { id: string } }) {
+async function handler(req: AuthenticatedRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = req.user;
     if (!user) {
@@ -14,7 +14,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: { id: st
       );
     }
 
-    const { id } = params;
+    const { id } = await params;
 
     if (req.method === 'GET') {
       // Get single recipe

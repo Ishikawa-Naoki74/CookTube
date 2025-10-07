@@ -2,7 +2,7 @@ import { PrismaClient, JobStatus } from '@prisma/client';
 import { YouTubeService } from './youtube';
 import { AWSTranscribeService } from './aws-transcribe';
 import { AWSRekognitionVideoService, VideoAnalysisResult } from './aws-rekognition-video';
-import { VideoProcessor, VideoFrame } from './video-processor';
+// import { VideoProcessor, VideoFrame } from './video-processor';
 import { AWSBedrockService } from './aws-bedrock';
 
 export interface EnhancedProcessingJobUpdate {
@@ -51,7 +51,7 @@ export class EnhancedRecipeProcessorService {
   private youtubeService: YouTubeService;
   private transcribeService: AWSTranscribeService;
   private rekognitionVideoService: AWSRekognitionVideoService;
-  private videoProcessor: VideoProcessor;
+  // private videoProcessor: VideoProcessor;
   private bedrockService: AWSBedrockService;
 
   constructor() {
@@ -59,7 +59,7 @@ export class EnhancedRecipeProcessorService {
     this.youtubeService = new YouTubeService();
     this.transcribeService = new AWSTranscribeService();
     this.rekognitionVideoService = new AWSRekognitionVideoService();
-    this.videoProcessor = new VideoProcessor();
+    // this.videoProcessor = new VideoProcessor();
     this.bedrockService = new AWSBedrockService();
   }
 
@@ -133,25 +133,25 @@ export class EnhancedRecipeProcessorService {
       await this.updateJobStatus(jobId, 'pending', 5, 'Getting video information', undefined, progressCallback);
       
       const videoInfo = await YouTubeService.getVideoInfo(youtubeUrl);
-      videoId = YouTubeService.extractVideoId(youtubeUrl);
+      videoId = YouTubeService.extractVideoId(youtubeUrl) || undefined;
       
       if (!videoId) {
         throw new Error('Could not extract video ID');
       }
 
       // Step 2: 動画のダウンロード
-      await this.updateJobStatus(jobId, 'processing', 15, 'Downloading video', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'extracting_frames', 15, 'Downloading video', undefined, progressCallback);
       
       const videoData = await this.videoProcessor.downloadVideo(youtubeUrl, videoId);
       
       // Step 3: 音声抽出と音声解析（並列処理）
-      await this.updateJobStatus(jobId, 'processing', 25, 'Extracting and analyzing audio', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'analyzing_frames', 25, 'Extracting and analyzing audio', undefined, progressCallback);
       
       const audioPath = await YouTubeService.downloadAudio(youtubeUrl);
       const transcriptionPromise = this.transcribeService.transcribeAudio(audioPath, videoId);
 
       // Step 4: 動画をS3にアップロード
-      await this.updateJobStatus(jobId, 'processing', 35, 'Uploading video for analysis', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'analyzing_frames', 35, 'Uploading video for analysis', undefined, progressCallback);
       
       const s3VideoKey = `videos/${videoId}/${Date.now()}.mp4`;
       const s3VideoUri = await this.rekognitionVideoService.uploadVideo(
@@ -160,30 +160,30 @@ export class EnhancedRecipeProcessorService {
       );
 
       // Step 5: AWS Rekognition Videoでの解析開始
-      await this.updateJobStatus(jobId, 'processing', 45, 'Starting video analysis', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'analyzing_frames', 45, 'Starting video analysis', undefined, progressCallback);
       
       const analysisJobId = await this.rekognitionVideoService.startVideoLabelDetection(s3VideoUri);
 
       // Step 6: フレーム抽出（キーフレーム + シーン変化）
-      await this.updateJobStatus(jobId, 'processing', 55, 'Extracting key frames', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'analyzing_frames', 55, 'Extracting key frames', undefined, progressCallback);
       
       const keyFrames = await this.videoProcessor.extractKeyFrames(videoData.videoPath, videoId);
       const sceneFrames = await this.videoProcessor.extractSceneChangeFrames(videoData.videoPath, videoId);
       const allFrames = [...keyFrames, ...sceneFrames].sort((a, b) => a.timestamp - b.timestamp);
 
       // Step 7: 動画解析の完了を待機
-      await this.updateJobStatus(jobId, 'processing', 65, 'Waiting for video analysis', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'analyzing_frames', 65, 'Waiting for video analysis', undefined, progressCallback);
       
       await this.rekognitionVideoService.waitForJobCompletion(analysisJobId);
       const videoAnalysis = await this.rekognitionVideoService.getVideoAnalysisResults(analysisJobId);
 
       // Step 8: 音声解析の完了を待機
-      await this.updateJobStatus(jobId, 'processing', 75, 'Completing audio transcription', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'analyzing_frames', 75, 'Completing audio transcription', undefined, progressCallback);
       
       const transcriptionResult = await transcriptionPromise;
 
       // Step 9: 統合データの準備
-      await this.updateJobStatus(jobId, 'processing', 85, 'Integrating analysis results', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'analyzing_frames', 85, 'Integrating analysis results', undefined, progressCallback);
       
       const integratedData = this.integrateAnalysisResults(
         videoInfo,
@@ -193,12 +193,12 @@ export class EnhancedRecipeProcessorService {
       );
 
       // Step 10: AIでレシピ生成
-      await this.updateJobStatus(jobId, 'processing', 90, 'Generating structured recipe', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'analyzing_frames', 90, 'Generating structured recipe', undefined, progressCallback);
       
       const structuredRecipe = await this.bedrockService.generateEnhancedRecipe(integratedData);
 
       // Step 11: データベースに保存
-      await this.updateJobStatus(jobId, 'processing', 95, 'Saving recipe to database', undefined, progressCallback);
+      await this.updateJobStatus(jobId, 'analyzing_frames', 95, 'Saving recipe to database', undefined, progressCallback);
       
       const savedRecipe = await this.saveEnhancedRecipe(userId, youtubeUrl, structuredRecipe);
 

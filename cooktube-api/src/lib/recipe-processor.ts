@@ -157,14 +157,14 @@ export class RecipeProcessorService {
           transcriptionText = videoData.transcript;
           console.log('✅ Using YouTube transcript (length:', transcriptionText.length, ')');
         }
-      } catch {
-        console.error('Video processing error');
+      } catch (videoError) {
+        console.error('Video processing error:', videoError);
       }
 
       await this.updateJobStatus(jobId, 'analyzing_frames', 40, undefined, progressCallback);
 
       // Step 3: Analyze frames with Gemini if available
-      let detectedLabels: string[] = [];
+      const detectedLabels: string[] = [];
       if (videoData?.thumbnailFrames && videoData.thumbnailFrames.length > 0) {
         try {
           console.log('🔍 Analyzing frames with Gemini Vision...');
@@ -173,8 +173,8 @@ export class RecipeProcessorService {
             detectedLabels.push(...labels.map(l => l.name));
           }
           console.log('✅ Frame analysis completed:', detectedLabels.length, 'labels found');
-        } catch {
-          console.error('Gemini frame analysis error');
+        } catch (frameError) {
+          console.error('Gemini frame analysis error:', frameError);
         }
       }
 
@@ -207,8 +207,8 @@ export class RecipeProcessorService {
           } else {
             throw new Error('No transcription or labels available');
           }
-        } catch {
-          console.error('All Gemini methods failed, using mock recipe');
+        } catch (fallbackError) {
+          console.error('All Gemini methods failed, using mock recipe:', fallbackError);
           generatedRecipe = this.generateMockRecipe(
             videoInfo.title || 'Recipe',
             videoInfo.description || transcriptionText || 'Generated recipe'
@@ -255,7 +255,13 @@ export class RecipeProcessorService {
     }
   }
 
-  private generateMockRecipe(title: string, description: string): { ingredients: Array<{ name: string; amount: string; unit: string }>; steps: Array<{ step_number: number; description: string; timestamp: number }> } {
+  private generateMockRecipe(
+    title: string,
+    description: string
+  ): {
+    ingredients: Array<{ name: string; amount: string; unit: string }>;
+    steps: Array<{ step_number: number; description: string; timestamp: number }>;
+  } {
     // Extract common cooking terms and ingredients from title/description
     const text = (title + ' ' + description).toLowerCase();
     

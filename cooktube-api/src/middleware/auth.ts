@@ -5,8 +5,10 @@ export interface AuthenticatedRequest extends NextRequest {
   user?: JWTPayload;
 }
 
-export function withAuth(handler: (req: AuthenticatedRequest, context?: any) => Promise<NextResponse>) {
-  return async (req: NextRequest, context?: any): Promise<NextResponse> => {
+export function withAuth<T = Record<string, unknown>>(
+  handler: (req: AuthenticatedRequest, context: T) => Promise<NextResponse>
+) {
+  return async (req: NextRequest, context: T): Promise<NextResponse> => {
     console.log('🔐 Auth middleware called for:', req.url);
 
     // Skip auth for OPTIONS requests (CORS preflight)
@@ -118,8 +120,10 @@ export function withAuth(handler: (req: AuthenticatedRequest, context?: any) => 
   };
 }
 
-export function withOptionalAuth(handler: (req: AuthenticatedRequest, context?: any) => Promise<NextResponse>) {
-  return async (req: NextRequest, context?: any): Promise<NextResponse> => {
+export function withOptionalAuth<T = Record<string, unknown>>(
+  handler: (req: AuthenticatedRequest, context: T) => Promise<NextResponse>
+) {
+  return async (req: NextRequest, context: T): Promise<NextResponse> => {
     try {
       const authHeader = req.headers.get('authorization');
       
