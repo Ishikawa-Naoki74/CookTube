@@ -8,7 +8,7 @@ async function handler(req: AuthenticatedRequest) {
   try {
     const user = req.user;
     if (!user) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
@@ -54,7 +54,7 @@ async function handler(req: AuthenticatedRequest) {
         prisma.recipe.count({ where: whereClause }),
       ]);
 
-      return NextResponse.json({
+      return Response.json({
         recipes,
         pagination: {
           page,
@@ -65,14 +65,14 @@ async function handler(req: AuthenticatedRequest) {
       });
     }
 
-    return NextResponse.json(
+    return Response.json(
       { error: 'Method not allowed' },
       { status: 405 }
     );
 
   } catch (error) {
     console.error('Recipes API error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to process request' },
       { status: 500 }
     );

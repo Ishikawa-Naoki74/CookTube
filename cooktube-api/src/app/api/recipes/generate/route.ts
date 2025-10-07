@@ -8,7 +8,7 @@ async function handler(req: AuthenticatedRequest) {
   console.log('🚀 Recipe generation API called');
   try {
     if (req.method !== 'POST') {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Method not allowed' },
         { status: 405 }
       );
@@ -16,7 +16,7 @@ async function handler(req: AuthenticatedRequest) {
 
     const user = req.user;
     if (!user) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
@@ -29,7 +29,7 @@ async function handler(req: AuthenticatedRequest) {
 
     if (!youtubeUrl) {
       console.log('❌ YouTube URL missing');
-      return NextResponse.json(
+      return Response.json(
         { error: 'YouTube URL is required' },
         { status: 400 }
       );
@@ -38,7 +38,7 @@ async function handler(req: AuthenticatedRequest) {
     // Start processing
     const jobId = await recipeProcessor.startProcessing(user.userId, youtubeUrl);
 
-    return NextResponse.json({
+    return Response.json({
       message: 'Recipe generation started',
       jobId,
     });
@@ -47,20 +47,20 @@ async function handler(req: AuthenticatedRequest) {
     console.error('Recipe generation API error:', error);
 
     if (error.message === 'Invalid YouTube URL') {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Please provide a valid YouTube URL' },
         { status: 400 }
       );
     }
 
     if (error.message === 'このレシピはすでに保存済みです') {
-      return NextResponse.json(
+      return Response.json(
         { error: 'このレシピはすでに保存済みです', alreadyExists: true },
         { status: 409 }
       );
     }
 
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to start recipe generation' },
       { status: 500 }
     );

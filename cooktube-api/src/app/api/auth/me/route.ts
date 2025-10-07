@@ -9,7 +9,7 @@ async function handler(req: AuthenticatedRequest) {
     const user = req.user;
     
     if (!user) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
@@ -17,7 +17,7 @@ async function handler(req: AuthenticatedRequest) {
 
     // For guest users, return the token data
     if (user.isGuest) {
-      return NextResponse.json({
+      return Response.json({
         user: {
           id: user.userId,
           name: 'Guest User',
@@ -40,18 +40,18 @@ async function handler(req: AuthenticatedRequest) {
     });
 
     if (!dbUser) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({
+    return Response.json({
       user: dbUser,
     });
   } catch (error) {
     console.error('Me API error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Internal server error' },
       { status: 500 }
     );

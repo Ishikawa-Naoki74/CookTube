@@ -8,7 +8,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
   try {
     const user = req.user;
     if (!user) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
@@ -26,13 +26,13 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
       });
 
       if (!recipe) {
-        return NextResponse.json(
+        return Response.json(
           { error: 'Recipe not found' },
           { status: 404 }
         );
       }
 
-      return NextResponse.json(recipe);
+      return Response.json(recipe);
     }
 
     if (req.method === 'PUT') {
@@ -48,7 +48,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
       });
 
       if (!recipe) {
-        return NextResponse.json(
+        return Response.json(
           { error: 'Recipe not found' },
           { status: 404 }
         );
@@ -63,7 +63,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
         },
       });
 
-      return NextResponse.json({
+      return Response.json({
         message: 'Recipe updated successfully',
         recipe: updatedRecipe,
       });
@@ -82,7 +82,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
 
       if (!recipe) {
         console.log('❌ Recipe not found:', id);
-        return NextResponse.json(
+        return Response.json(
           { error: 'Recipe not found' },
           { status: 404 }
         );
@@ -96,20 +96,20 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
 
       console.log('✅ Recipe deleted successfully:', id);
       
-      return NextResponse.json({
+      return Response.json({
         success: true,
         message: 'Recipe deleted successfully',
       });
     }
 
-    return NextResponse.json(
+    return Response.json(
       { error: 'Method not allowed' },
       { status: 405 }
     );
 
   } catch (error) {
     console.error('Recipe API error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to process request' },
       { status: 500 }
     );

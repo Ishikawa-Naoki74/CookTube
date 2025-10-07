@@ -18,7 +18,7 @@ async function handler(req: AuthenticatedRequest) {
   try {
     const user = req.user;
     if (!user) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
@@ -31,7 +31,7 @@ async function handler(req: AuthenticatedRequest) {
         orderBy: { updatedAt: 'desc' },
       });
 
-      return NextResponse.json({ shoppingLists });
+      return Response.json({ shoppingLists });
     }
 
     if (req.method === 'POST') {
@@ -40,7 +40,7 @@ async function handler(req: AuthenticatedRequest) {
       const { name, items } = body;
 
       if (!name) {
-        return NextResponse.json(
+        return Response.json(
           { error: 'Shopping list name is required' },
           { status: 400 }
         );
@@ -54,20 +54,20 @@ async function handler(req: AuthenticatedRequest) {
         },
       });
 
-      return NextResponse.json({
+      return Response.json({
         message: 'Shopping list created successfully',
         shoppingList,
       });
     }
 
-    return NextResponse.json(
+    return Response.json(
       { error: 'Method not allowed' },
       { status: 405 }
     );
 
   } catch (error) {
     console.error('Shopping lists API error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to process request' },
       { status: 500 }
     );

@@ -6,7 +6,7 @@ async function handler(req: AuthenticatedRequest) {
   console.log('🎬 Video info API called');
   try {
     if (req.method !== 'POST') {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Method not allowed' },
         { status: 405 }
       );
@@ -14,7 +14,7 @@ async function handler(req: AuthenticatedRequest) {
 
     const user = req.user;
     if (!user) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
@@ -27,7 +27,7 @@ async function handler(req: AuthenticatedRequest) {
 
     if (!youtubeUrl) {
       console.log('❌ YouTube URL missing');
-      return NextResponse.json(
+      return Response.json(
         { error: 'YouTube URL is required' },
         { status: 400 }
       );
@@ -38,26 +38,26 @@ async function handler(req: AuthenticatedRequest) {
     const videoInfo = await YouTubeService.getVideoInfo(youtubeUrl);
     console.log('✅ Video info retrieved:', videoInfo);
 
-    return NextResponse.json(videoInfo);
+    return Response.json(videoInfo);
 
   } catch (error: any) {
     console.error('Video info API error:', error);
     
     if (error.message === 'Invalid YouTube URL') {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Please provide a valid YouTube URL' },
         { status: 400 }
       );
     }
 
     if (error.message === 'YouTube API key not configured') {
-      return NextResponse.json(
+      return Response.json(
         { error: 'YouTube API is not configured' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to get video information' },
       { status: 500 }
     );
@@ -65,3 +65,14 @@ async function handler(req: AuthenticatedRequest) {
 }
 
 export const POST = withAuth(handler);
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
+}

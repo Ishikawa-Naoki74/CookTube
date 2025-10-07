@@ -9,14 +9,14 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
   try {
     const user = req.user;
     if (!user) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
     }
 
     if (req.method !== 'POST') {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Method not allowed' },
         { status: 405 }
       );
@@ -35,7 +35,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
     });
 
     if (!recipe) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Recipe not found' },
         { status: 404 }
       );
@@ -64,14 +64,14 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
       },
     });
 
-    return NextResponse.json({
+    return Response.json({
       message: 'Shopping list created from recipe',
       shoppingList,
     });
 
   } catch (error) {
     console.error('Create shopping list from recipe API error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to create shopping list from recipe' },
       { status: 500 }
     );

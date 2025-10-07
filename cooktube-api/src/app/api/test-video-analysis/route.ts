@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const youtubeUrl = searchParams.get('url');
 
   if (!youtubeUrl) {
-    return NextResponse.json(
+    return Response.json(
       { error: 'YouTube URL parameter is required. Example: ?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
       { status: 400 }
     );
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     console.log('✅ URL validation:', isValid);
     
     if (!isValid) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Invalid YouTube URL format' },
         { status: 400 }
       );
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     // Extract video ID
     const videoId = YouTubeService.extractVideoId(youtubeUrl);
     if (!videoId) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Could not extract video ID from URL' },
         { status: 400 }
       );
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     console.log('✅ Video processing completed');
     console.log('📊 Analysis summary:', result.analysisSummary?.summary);
 
-    return NextResponse.json({
+    return Response.json({
       success: true,
       message: 'Video analysis test completed',
       videoInfo,
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error('❌ Video analysis test failed:', error);
     
-    return NextResponse.json(
+    return Response.json(
       { 
         error: 'Video analysis test failed',
         message: error.message,

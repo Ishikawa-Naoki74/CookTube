@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const youtubeUrl = searchParams.get('url');
 
   if (!youtubeUrl) {
-    return NextResponse.json(
+    return Response.json(
       { error: 'YouTube URL parameter is required. Example: ?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
       { status: 400 }
     );
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     console.log('✅ URL validation:', isValid);
     
     if (!isValid) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Invalid YouTube URL format' },
         { status: 400 }
       );
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       duration: videoInfo.duration
     });
 
-    return NextResponse.json({
+    return Response.json({
       success: true,
       message: 'YouTube Data API test successful',
       data: videoInfo
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error('❌ YouTube API test failed:', error);
     
-    return NextResponse.json(
+    return Response.json(
       { 
         error: 'YouTube API test failed',
         message: error.message,

@@ -23,20 +23,20 @@ export async function POST(request: NextRequest) {
     const result = await AuthService.createGuestUser();
 
     if (!result.success) {
-      return NextResponse.json(
+      return Response.json(
         { error: result.message },
         { status: 500, headers: corsHeaders }
       );
     }
 
-    return NextResponse.json({
+    return Response.json({
       message: 'Guest user created successfully',
       token: result.token,
       user: result.user,
     }, { headers: corsHeaders });
   } catch (error) {
     console.error('Guest API error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Internal server error' },
       { status: 500, headers: corsHeaders }
     );

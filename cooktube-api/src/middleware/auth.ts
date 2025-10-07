@@ -6,9 +6,9 @@ export interface AuthenticatedRequest extends NextRequest {
 }
 
 export function withAuth<T = Record<string, unknown>>(
-  handler: (req: AuthenticatedRequest, context: T) => Promise<NextResponse>
+  handler: (req: AuthenticatedRequest, context: T) => Promise<Response>
 ) {
-  return async (req: NextRequest, context: T): Promise<NextResponse> => {
+  return async (req: NextRequest, context: T): Promise<Response> => {
     console.log('🔐 Auth middleware called for:', req.url);
 
     // Skip auth for OPTIONS requests (CORS preflight)
@@ -28,7 +28,7 @@ export function withAuth<T = Record<string, unknown>>(
       console.log('🔑 Auth header:', authHeader ? 'Present' : 'Missing');
 
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return NextResponse.json(
+        return Response.json(
           { error: 'Authorization token required' },
           {
             status: 401,
@@ -78,7 +78,7 @@ export function withAuth<T = Record<string, unknown>>(
       const payload = JWTService.verifyToken(token);
 
       if (!payload) {
-        return NextResponse.json(
+        return Response.json(
           { error: 'Invalid or expired token' },
           {
             status: 401,
@@ -105,7 +105,7 @@ export function withAuth<T = Record<string, unknown>>(
       return response;
     } catch (error) {
       console.error('Authentication error:', error);
-      return NextResponse.json(
+      return Response.json(
         { error: 'Authentication failed' },
         {
           status: 401,
@@ -121,9 +121,9 @@ export function withAuth<T = Record<string, unknown>>(
 }
 
 export function withOptionalAuth<T = Record<string, unknown>>(
-  handler: (req: AuthenticatedRequest, context: T) => Promise<NextResponse>
+  handler: (req: AuthenticatedRequest, context: T) => Promise<Response>
 ) {
-  return async (req: NextRequest, context: T): Promise<NextResponse> => {
+  return async (req: NextRequest, context: T): Promise<Response> => {
     try {
       const authHeader = req.headers.get('authorization');
       

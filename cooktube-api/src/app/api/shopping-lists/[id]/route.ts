@@ -8,7 +8,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
   try {
     const user = req.user;
     if (!user) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
@@ -26,13 +26,13 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
       });
 
       if (!shoppingList) {
-        return NextResponse.json(
+        return Response.json(
           { error: 'Shopping list not found' },
           { status: 404 }
         );
       }
 
-      return NextResponse.json(shoppingList);
+      return Response.json(shoppingList);
     }
 
     if (req.method === 'PUT') {
@@ -48,7 +48,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
       });
 
       if (!shoppingList) {
-        return NextResponse.json(
+        return Response.json(
           { error: 'Shopping list not found' },
           { status: 404 }
         );
@@ -62,7 +62,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
         },
       });
 
-      return NextResponse.json({
+      return Response.json({
         message: 'Shopping list updated successfully',
         shoppingList: updatedShoppingList,
       });
@@ -78,7 +78,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
       });
 
       if (!shoppingList) {
-        return NextResponse.json(
+        return Response.json(
           { error: 'Shopping list not found' },
           { status: 404 }
         );
@@ -88,19 +88,19 @@ async function handler(req: AuthenticatedRequest, { params }: { params: Promise<
         where: { id },
       });
 
-      return NextResponse.json({
+      return Response.json({
         message: 'Shopping list deleted successfully',
       });
     }
 
-    return NextResponse.json(
+    return Response.json(
       { error: 'Method not allowed' },
       { status: 405 }
     );
 
   } catch (error) {
     console.error('Shopping list API error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to process request' },
       { status: 500 }
     );

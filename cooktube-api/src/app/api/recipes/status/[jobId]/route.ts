@@ -8,7 +8,7 @@ async function handler(req: AuthenticatedRequest, context: { params: Promise<{ j
   try {
     const user = req.user;
     if (!user) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
@@ -17,7 +17,7 @@ async function handler(req: AuthenticatedRequest, context: { params: Promise<{ j
     const { jobId } = await context.params;
 
     if (!jobId) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Job ID is required' },
         { status: 400 }
       );
@@ -26,17 +26,17 @@ async function handler(req: AuthenticatedRequest, context: { params: Promise<{ j
     const jobStatus = await recipeProcessor.getJobStatus(jobId);
 
     if (!jobStatus) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Job not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json(jobStatus);
+    return Response.json(jobStatus);
 
   } catch (error) {
     console.error('Job status API error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to get job status' },
       { status: 500 }
     );

@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!email || !password) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Email and password are required' },
         { status: 400, headers: corsHeaders }
       );
@@ -34,20 +34,20 @@ export async function POST(request: NextRequest) {
     const result = await AuthService.login({ email, password });
 
     if (!result.success) {
-      return NextResponse.json(
+      return Response.json(
         { error: result.message },
         { status: 401, headers: corsHeaders }
       );
     }
 
-    return NextResponse.json({
+    return Response.json({
       message: 'Login successful',
       token: result.token,
       user: result.user,
     }, { headers: corsHeaders });
   } catch (error) {
     console.error('Login API error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Internal server error' },
       { status: 500, headers: corsHeaders }
     );
