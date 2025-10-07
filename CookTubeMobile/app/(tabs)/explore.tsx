@@ -17,14 +17,19 @@ import { router } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { RecipeApiClient } from '../../lib/recipe-api';
 import { ApiRecipe } from '../../types/api';
+import { getSavedRecipes, deleteRecipe as deleteStoredRecipe, ClientSavedRecipe } from '@/utils/recipeStorage';
+import { supabase } from '@/lib/supabase';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2; // 2 cards per row with margins
 
+// Combined type for both API recipes and Supabase saved recipes
+type RecipeItem = (ApiRecipe | ClientSavedRecipe) & { source: 'api' | 'saved' };
+
 interface RecipeCardProps {
-  recipe: ApiRecipe;
-  onPress: (recipe: ApiRecipe) => void;
-  onDelete: (recipe: ApiRecipe) => void;
+  recipe: RecipeItem;
+  onPress: (recipe: RecipeItem) => void;
+  onDelete: (recipe: RecipeItem) => void;
 }
 
 function RecipeCard({ recipe, onPress, onDelete }: RecipeCardProps) {
@@ -41,14 +46,18 @@ function RecipeCard({ recipe, onPress, onDelete }: RecipeCardProps) {
     return url.includes('/shorts/') || url.includes('youtube.com/shorts');
   };
 
+  // Get the appropriate URL and date fields based on source
+  const videoUrl = 'youtubeUrl' in recipe ? recipe.youtubeUrl : recipe.videoUrl;
+  const createdDate = 'createdAt' in recipe ? recipe.createdAt : recipe.savedAt;
+
   const handleDelete = () => {
     console.log('🗑️ Delete button touched for recipe:', recipe.id);
     Alert.alert(
       'Delete Recipe',
       `Are you sure you want to delete "${recipe.videoTitle}"? This action cannot be undone.`,
       [
-        { 
-          text: 'Cancel', 
+        {
+          text: 'Cancel',
           style: 'cancel',
           onPress: () => console.log('Delete cancelled')
         },
@@ -79,18 +88,23 @@ function RecipeCard({ recipe, onPress, onDelete }: RecipeCardProps) {
           source={{ uri: recipe.videoThumbnail }}
           style={[
             styles.recipeThumbnail,
-            isShortVideo(recipe.youtubeUrl) && styles.shortsRecipeThumbnail
+            isShortVideo(videoUrl) && styles.shortsRecipeThumbnail
           ]}
           contentFit="cover"
-          placeholder={{ 
-            uri: isShortVideo(recipe.youtubeUrl)
+          placeholder={{
+            uri: isShortVideo(videoUrl)
               ? 'https://via.placeholder.com/300x400/cccccc/666666?text=Shorts'
               : 'https://via.placeholder.com/300x169?text=Loading...'
           }}
         />
-        {isShortVideo(recipe.youtubeUrl) && (
+        {isShortVideo(videoUrl) && (
           <View style={styles.shortsCardBadge}>
             <Text style={styles.shortsCardBadgeText}>Shorts</Text>
+          </View>
+        )}
+        {recipe.source === 'saved' && (
+          <View style={styles.savedBadge}>
+            <Text style={styles.savedBadgeText}>Saved</Text>
           </View>
         )}
         <TouchableOpacity 
@@ -107,7 +121,7 @@ function RecipeCard({ recipe, onPress, onDelete }: RecipeCardProps) {
           {recipe.videoTitle}
         </Text>
         <Text style={styles.recipeDate}>
-          {formatDate(recipe.createdAt)}
+          {formatDate(createdDate)}
         </Text>
         <View style={styles.recipeStats}>
           <Text style={styles.statText}>
@@ -124,7 +138,7 @@ function RecipeCard({ recipe, onPress, onDelete }: RecipeCardProps) {
 
 export default function RecipeListScreen() {
   const { user } = useAuth();
-  const [recipes, setRecipes] = useState<ApiRecipe[]>([]);
+  const [recipes, setRecipes] = useState<RecipeItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -138,20 +152,57 @@ export default function RecipeListScreen() {
         setIsLoading(true);
       }
 
-      const response = await RecipeApiClient.getRecipes({
-        page,
-        limit: 10,
-        search: search.trim() || undefined,
+      // Get Supabase session
+      const { data: { session } } = await supabase.auth.getSession();
+
+      // Load both API recipes and Supabase saved recipes
+      const promises: [Promise<any>, Promise<ClientSavedRecipe[]>?] = [
+        RecipeApiClient.getRecipes({
+          page,
+          limit: 10,
+          search: search.trim() || undefined,
+        })
+      ];
+
+      // Only load saved recipes if user is logged in
+      if (session?.user?.id) {
+        promises.push(getSavedRecipes(session.user.id));
+      }
+
+      const results = await Promise.all(promises);
+      const apiResponse = results[0];
+      const savedRecipes = results[1] || [];
+
+      // Mark recipes with their source
+      const apiRecipesWithSource: RecipeItem[] = apiResponse.recipes.map((recipe: ApiRecipe) => ({
+        ...recipe,
+        source: 'api' as const,
+      }));
+
+      const savedRecipesWithSource: RecipeItem[] = savedRecipes
+        .filter(recipe =>
+          !search || recipe.videoTitle.toLowerCase().includes(search.toLowerCase())
+        )
+        .map(recipe => ({
+          ...recipe,
+          source: 'saved' as const,
+        }));
+
+      // Combine and sort by date (most recent first)
+      const allRecipes = [...savedRecipesWithSource, ...apiRecipesWithSource].sort((a, b) => {
+        const dateA = 'createdAt' in a ? new Date(a.createdAt) : new Date(a.savedAt);
+        const dateB = 'createdAt' in b ? new Date(b.createdAt) : new Date(b.savedAt);
+        return dateB.getTime() - dateA.getTime();
       });
 
       if (page === 1) {
-        setRecipes(response.recipes);
+        setRecipes(allRecipes);
       } else {
-        setRecipes(prev => [...prev, ...response.recipes]);
+        setRecipes(prev => [...prev, ...apiRecipesWithSource]);
       }
 
       setCurrentPage(page);
-      setHasMore(page < response.pagination.pages);
+      setHasMore(page < apiResponse.pagination.pages);
     } catch (error: any) {
       console.error('Failed to load recipes:', error);
       Alert.alert('Error', 'Failed to load recipes. Please try again.');
@@ -187,25 +238,53 @@ export default function RecipeListScreen() {
     }
   }, [isLoadingMore, hasMore, isLoading, currentPage, searchQuery, loadRecipes]);
 
-  const handleRecipePress = useCallback((recipe: ApiRecipe) => {
-    router.push(`/recipe/${recipe.id}` as any);
+  const handleRecipePress = useCallback((recipe: RecipeItem) => {
+    if (recipe.source === 'api') {
+      router.push(`/recipe/${recipe.id}` as any);
+    } else {
+      // For saved recipes, show a simple view or navigate to detail
+      Alert.alert(
+        recipe.videoTitle,
+        'This is a saved recipe. Open in a new screen?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'View',
+            onPress: () => {
+              // TODO: Navigate to a saved recipe detail screen
+              console.log('View saved recipe:', recipe);
+            },
+          },
+        ]
+      );
+    }
   }, []);
 
-  const handleRecipeDelete = useCallback(async (recipe: ApiRecipe) => {
+  const handleRecipeDelete = useCallback(async (recipe: RecipeItem) => {
     console.log('🗑️ handleRecipeDelete called for recipe:', recipe.id, recipe.videoTitle);
-    
+
     try {
-      console.log('📡 About to call RecipeApiClient.deleteRecipe...');
-      const result = await RecipeApiClient.deleteRecipe(recipe.id);
-      console.log('✅ RecipeApiClient.deleteRecipe completed, result:', result);
-      
+      if (recipe.source === 'api') {
+        console.log('📡 About to call RecipeApiClient.deleteRecipe...');
+        const result = await RecipeApiClient.deleteRecipe(recipe.id);
+        console.log('✅ RecipeApiClient.deleteRecipe completed, result:', result);
+      } else {
+        console.log('📱 Deleting saved recipe from Supabase...');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) {
+          throw new Error('User not authenticated');
+        }
+        await deleteStoredRecipe(recipe.id, session.user.id);
+        console.log('✅ Saved recipe deleted');
+      }
+
       console.log('🔄 Updating local state to remove recipe from list...');
       setRecipes(prev => {
         const filtered = prev.filter(r => r.id !== recipe.id);
         console.log('📝 Recipe list updated. Before:', prev.length, 'After:', filtered.length);
         return filtered;
       });
-      
+
       console.log('✅ Showing success alert...');
       Alert.alert('Success', 'Recipe deleted successfully!');
     } catch (error: any) {
@@ -217,17 +296,17 @@ export default function RecipeListScreen() {
         name: error.name,
         stack: error.stack
       });
-      
+
       const errorMessage = error.message || error.data?.error || 'Failed to delete recipe. Please try again.';
       console.log('🚨 Showing error alert:', errorMessage);
       Alert.alert('Error', errorMessage);
     }
   }, []);
 
-  const renderRecipeCard = useCallback(({ item }: { item: ApiRecipe }) => (
-    <RecipeCard 
-      recipe={item} 
-      onPress={handleRecipePress} 
+  const renderRecipeCard = useCallback(({ item }: { item: RecipeItem }) => (
+    <RecipeCard
+      recipe={item}
+      onPress={handleRecipePress}
       onDelete={handleRecipeDelete}
     />
   ), [handleRecipePress, handleRecipeDelete]);
@@ -442,6 +521,20 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   shortsCardBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  savedBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(76, 175, 80, 0.9)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 3,
+  },
+  savedBadgeText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '600',

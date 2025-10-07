@@ -1,23 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  SafeAreaView,
-  Alert,
-  ActivityIndicator,
-  Linking,
-  Share,
-  Modal,
-  TextInput,
-} from 'react-native';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Linking,
+    Modal,
+    SafeAreaView,
+    ScrollView,
+    Share,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { RecipeApiClient } from '../../lib/recipe-api';
+import { supabase } from '../../lib/supabase';
 import { ApiRecipe, RecipeIngredient, RecipeStep } from '../../types/api';
+import { isRecipeSaved, saveRecipe } from '../../utils/recipeStorage';
 
 interface EditModalProps {
   visible: boolean;
@@ -189,6 +191,8 @@ export default function RecipeDetailScreen() {
   const [recipe, setRecipe] = useState<ApiRecipe | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const hasAttemptedAutoSave = useRef(false);
 
   const isShortVideo = (url: string): boolean => {
     return url.includes('/shorts/') || url.includes('youtube.com/shorts');
@@ -206,6 +210,12 @@ export default function RecipeDetailScreen() {
       setIsLoading(true);
       const recipeData = await RecipeApiClient.getRecipe(id);
       setRecipe(recipeData);
+
+      // Check if recipe is already saved
+      if (user?.id) {
+        const saved = await isRecipeSaved(recipeData.youtubeUrl, user.id);
+        setIsSaved(saved);
+      }
     } catch (error: any) {
       console.error('Failed to load recipe:', error);
       Alert.alert('Error', 'Failed to load recipe. Please try again.');
@@ -214,6 +224,47 @@ export default function RecipeDetailScreen() {
       setIsLoading(false);
     }
   };
+
+  // Auto-save once when recipe loads and user is logged in
+  useEffect(() => {
+    const maybeAutoSave = async () => {
+      if (hasAttemptedAutoSave.current) return;
+      if (!recipe || !user?.id) return;
+      if (isSaved) return;
+
+      try {
+        // Ensure session exists for RLS
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        // Double-check not saved yet to avoid race
+        const alreadySaved = await isRecipeSaved(recipe.youtubeUrl, session.user.id);
+        if (alreadySaved) {
+          setIsSaved(true);
+          hasAttemptedAutoSave.current = true;
+          return;
+        }
+
+        await saveRecipe({
+          videoUrl: recipe.youtubeUrl,
+          videoTitle: recipe.videoTitle,
+          videoThumbnail: recipe.videoThumbnail,
+          ingredients: recipe.ingredients || [],
+          steps: recipe.steps || [],
+        }, session.user.id);
+
+        setIsSaved(true);
+      } catch (e: any) {
+        // Ignore duplicate errors due to unique constraint or transient errors
+        console.warn('Auto-save skipped:', e?.message || e);
+      } finally {
+        hasAttemptedAutoSave.current = true;
+      }
+    };
+
+    maybeAutoSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipe, user?.id, isSaved]);
 
   const handleEdit = () => {
     setShowEditModal(true);
@@ -342,6 +393,37 @@ export default function RecipeDetailScreen() {
     setCheckedIngredients(newChecked);
   };
 
+  const handleSaveRecipe = async () => {
+    if (!recipe || !user?.id) {
+      Alert.alert('Error', 'Please login to save recipes.');
+      return;
+    }
+
+    try {
+      // Get Supabase session to ensure user is authenticated
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        Alert.alert('Error', 'Please login to save recipes.');
+        return;
+      }
+
+      await saveRecipe({
+        videoUrl: recipe.youtubeUrl,
+        videoTitle: recipe.videoTitle,
+        videoThumbnail: recipe.videoThumbnail,
+        ingredients: recipe.ingredients || [],
+        steps: recipe.steps || [],
+      }, session.user.id);
+
+      setIsSaved(true);
+      Alert.alert('Success', 'Recipe saved to My Recipe!');
+    } catch (error: any) {
+      console.error('Failed to save recipe:', error);
+      Alert.alert('Error', error.message || 'Failed to save recipe. Please try again.');
+    }
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -374,6 +456,15 @@ export default function RecipeDetailScreen() {
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
           <View style={styles.actionButtons}>
+            <TouchableOpacity
+              onPress={handleSaveRecipe}
+              style={[styles.actionButton, isSaved && styles.savedButton]}
+              disabled={isSaved}
+            >
+              <Text style={[styles.actionButtonText, isSaved && styles.savedButtonText]}>
+                {isSaved ? '✓ Saved' : 'Save'}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity onPress={handleEdit} style={styles.actionButton}>
               <Text style={styles.actionButtonText}>Edit</Text>
             </TouchableOpacity>
@@ -563,6 +654,12 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     color: '#d32f2f',
+  },
+  savedButton: {
+    backgroundColor: '#e8f5e9',
+  },
+  savedButtonText: {
+    color: '#4caf50',
   },
   videoSection: {
     position: 'relative',
