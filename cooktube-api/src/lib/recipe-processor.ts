@@ -128,8 +128,8 @@ export class RecipeProcessorService {
     youtubeUrl: string,
     progressCallback?: ProcessingProgressCallback
   ): Promise<void> {
-    let videoData: any = null;
-    let videoInfo: any = null;
+    let videoData: Awaited<ReturnType<YouTubeProcessor['processVideo']>> | null = null;
+    let videoInfo: Awaited<ReturnType<typeof YouTubeService.getVideoInfo>> | null = null;
 
     try {
       // Step 1: Get video information from YouTube
@@ -157,8 +157,8 @@ export class RecipeProcessorService {
           transcriptionText = videoData.transcript;
           console.log('✅ Using YouTube transcript (length:', transcriptionText.length, ')');
         }
-      } catch (error) {
-        console.error('Video processing error:', error);
+      } catch {
+        console.error('Video processing error');
       }
 
       await this.updateJobStatus(jobId, 'analyzing_frames', 40, undefined, progressCallback);
@@ -173,8 +173,8 @@ export class RecipeProcessorService {
             detectedLabels.push(...labels.map(l => l.name));
           }
           console.log('✅ Frame analysis completed:', detectedLabels.length, 'labels found');
-        } catch (error) {
-          console.error('Gemini frame analysis error:', error);
+        } catch {
+          console.error('Gemini frame analysis error');
         }
       }
 
@@ -207,8 +207,8 @@ export class RecipeProcessorService {
           } else {
             throw new Error('No transcription or labels available');
           }
-        } catch (fallbackError) {
-          console.error('All Gemini methods failed, using mock recipe:', fallbackError);
+        } catch {
+          console.error('All Gemini methods failed, using mock recipe');
           generatedRecipe = this.generateMockRecipe(
             videoInfo.title || 'Recipe',
             videoInfo.description || transcriptionText || 'Generated recipe'
@@ -255,7 +255,7 @@ export class RecipeProcessorService {
     }
   }
 
-  private generateMockRecipe(title: string, description: string): any {
+  private generateMockRecipe(title: string, description: string): { ingredients: Array<{ name: string; amount: string; unit: string }>; steps: Array<{ step_number: number; description: string; timestamp: number }> } {
     // Extract common cooking terms and ingredients from title/description
     const text = (title + ' ' + description).toLowerCase();
     
