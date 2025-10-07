@@ -148,12 +148,13 @@ export class AuthService {
   static async createGuestUser(): Promise<AuthResponse> {
     try {
       const guestId = `guest-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
+      const guestEmail = `${guestId}@guest.local`;
+
       const user = await prisma.user.create({
         data: {
           id: guestId,
           name: 'Guest User',
-          email: '',
+          email: guestEmail,
           isGuest: true,
         },
       });

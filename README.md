@@ -65,7 +65,7 @@ OPENAI_API_KEY="your-openai-api-key"
 
 #### Mobile App (.env in CookTubeMobile/)
 ```env
-EXPO_PUBLIC_API_URL="http://localhost:3000/api"
+EXPO_PUBLIC_API_URL="http://localhost:3005/api"
 ```
 
 ### Installation

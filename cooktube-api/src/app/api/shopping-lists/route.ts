@@ -50,7 +50,7 @@ async function handler(req: AuthenticatedRequest) {
         data: {
           userId: user.userId,
           name,
-          items: items || [],
+          items: (items || []) as any,
         },
       });
 

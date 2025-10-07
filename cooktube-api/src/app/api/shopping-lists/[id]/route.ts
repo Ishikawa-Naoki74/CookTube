@@ -58,7 +58,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: { id: st
         where: { id },
         data: {
           ...(name && { name }),
-          ...(items && { items }),
+          ...(items && { items: items as any }),
         },
       });
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { JWTService, JWTPayload } from '../lib/jwt';
+import { JWTPayload, JWTService } from '../lib/jwt';
 
 export interface AuthenticatedRequest extends NextRequest {
   user?: JWTPayload;
@@ -8,14 +8,34 @@ export interface AuthenticatedRequest extends NextRequest {
 export function withAuth(handler: (req: AuthenticatedRequest, context?: any) => Promise<NextResponse>) {
   return async (req: NextRequest, context?: any): Promise<NextResponse> => {
     console.log('🔐 Auth middleware called for:', req.url);
+
+    // Skip auth for OPTIONS requests (CORS preflight)
+    if (req.method === 'OPTIONS') {
+      return new NextResponse(null, {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      });
+    }
+
     try {
       const authHeader = req.headers.get('authorization');
       console.log('🔑 Auth header:', authHeader ? 'Present' : 'Missing');
-      
+
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return NextResponse.json(
           { error: 'Authorization token required' },
-          { status: 401 }
+          {
+            status: 401,
+            headers: {
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+              'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            }
+          }
         );
       }
 
@@ -30,9 +50,13 @@ export function withAuth(handler: (req: AuthenticatedRequest, context?: any) => 
           isGuest: true
         };
         (req as AuthenticatedRequest).user = mockPayload;
-        return handler(req as AuthenticatedRequest, context);
+        const response = await handler(req as AuthenticatedRequest, context);
+        response.headers.set('Access-Control-Allow-Origin', '*');
+        response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        return response;
       }
-      
+
       // TODO: Temporary mock token acceptance for testing
       if (token === 'mock-jwt-token-for-testing') {
         console.log('🔧 Using mock authentication for testing');
@@ -42,7 +66,11 @@ export function withAuth(handler: (req: AuthenticatedRequest, context?: any) => 
           isGuest: true
         };
         (req as AuthenticatedRequest).user = mockPayload;
-        return handler(req as AuthenticatedRequest, context);
+        const response = await handler(req as AuthenticatedRequest, context);
+        response.headers.set('Access-Control-Allow-Origin', '*');
+        response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        return response;
       }
       
       const payload = JWTService.verifyToken(token);
@@ -50,7 +78,14 @@ export function withAuth(handler: (req: AuthenticatedRequest, context?: any) => 
       if (!payload) {
         return NextResponse.json(
           { error: 'Invalid or expired token' },
-          { status: 401 }
+          {
+            status: 401,
+            headers: {
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+              'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            }
+          }
         );
       }
 
@@ -58,12 +93,26 @@ export function withAuth(handler: (req: AuthenticatedRequest, context?: any) => 
       const authenticatedReq = req as AuthenticatedRequest;
       authenticatedReq.user = payload;
 
-      return handler(authenticatedReq, context);
+      const response = await handler(authenticatedReq, context);
+
+      // Add CORS headers to response
+      response.headers.set('Access-Control-Allow-Origin', '*');
+      response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+      return response;
     } catch (error) {
       console.error('Authentication error:', error);
       return NextResponse.json(
         { error: 'Authentication failed' },
-        { status: 401 }
+        {
+          status: 401,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          }
+        }
       );
     }
   };

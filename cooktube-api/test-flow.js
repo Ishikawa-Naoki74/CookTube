@@ -8,7 +8,7 @@ async function testRecipeGeneration() {
   try {
     // Test recipe generation endpoint
     console.log('📤 Calling recipe generation API...');
-    const response = await fetch('http://localhost:3003/api/recipes/generate', {
+    const response = await fetch('http://localhost:3005/api/recipes/generate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -45,7 +45,7 @@ async function monitorJobProgress(jobId) {
 
   while (attempts < maxAttempts) {
     try {
-      const response = await fetch(`http://localhost:3003/api/recipes/jobs/${jobId}`, {
+      const response = await fetch(`http://localhost:3005/api/recipes/jobs/${jobId}`, {
         headers: {
           'Authorization': 'Bearer mock-jwt-token-for-testing'
         }

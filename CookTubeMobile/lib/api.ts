@@ -1,6 +1,6 @@
 import { AuthService } from './auth';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3005/api';
 console.log('🌐 API_BASE_URL configured as:', API_BASE_URL);
 
 export class ApiClient {

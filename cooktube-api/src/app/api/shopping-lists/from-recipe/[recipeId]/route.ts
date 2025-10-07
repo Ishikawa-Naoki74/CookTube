@@ -60,7 +60,7 @@ async function handler(req: AuthenticatedRequest, { params }: { params: { recipe
       data: {
         userId: user.userId,
         name: shoppingListName,
-        items: shoppingListItems,
+        items: shoppingListItems as any,
       },
     });
 

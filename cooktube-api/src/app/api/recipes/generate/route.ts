@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { withAuth, AuthenticatedRequest } from '@/middleware/auth';
 import { RecipeProcessorService } from '@/lib/recipe-processor';
+import { AuthenticatedRequest, withAuth } from '@/middleware/auth';
+import { NextResponse } from 'next/server';
 
 const recipeProcessor = new RecipeProcessorService();
 
@@ -45,11 +45,18 @@ async function handler(req: AuthenticatedRequest) {
 
   } catch (error: any) {
     console.error('Recipe generation API error:', error);
-    
+
     if (error.message === 'Invalid YouTube URL') {
       return NextResponse.json(
         { error: 'Please provide a valid YouTube URL' },
         { status: 400 }
+      );
+    }
+
+    if (error.message === 'このレシピはすでに保存済みです') {
+      return NextResponse.json(
+        { error: 'このレシピはすでに保存済みです', alreadyExists: true },
+        { status: 409 }
       );
     }
 
@@ -61,3 +68,14 @@ async function handler(req: AuthenticatedRequest) {
 }
 
 export const POST = withAuth(handler);
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
+}
